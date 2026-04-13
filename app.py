@@ -1,5 +1,13 @@
 from flask import Flask, request, jsonify, send_file
-import subprocess, os, uuid, threading
+import subprocess, os, uuid, threading, logging, sys
+
+# Setup logging supaya muncul di Railway
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 JOBS = {}
@@ -7,13 +15,20 @@ OUTPUT_DIR = "/tmp/clips"
 COOKIES_FILE = "/tmp/cookies.txt"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Tulis cookies dari environment variable ke file sementara
+# Tulis cookies dari environment variable
 cookies_content = os.environ.get("YOUTUBE_COOKIES", "")
 if cookies_content:
     with open(COOKIES_FILE, "w") as f:
         f.write(cookies_content)
+    logger.info("✅ Cookies berhasil ditulis ke file")
+else:
+    logger.warning("⚠️ YOUTUBE_COOKIES tidak ditemukan di environment")
 
 def process_video(job_id, youtube_url, clips):
+    logger.info(f"🚀 Mulai proses job {job_id}")
+    logger.info(f"📺 URL: {youtube_url}")
+    logger.info(f"✂️ Jumlah clips: {len(clips)}")
+
     try:
         JOBS[job_id]["status"] = "downloading"
         raw_path = f"{OUTPUT_DIR}/{job_id}_raw.mp4"
@@ -28,22 +43,29 @@ def process_video(job_id, youtube_url, clips):
             "--add-header", "Accept-Language:en-US,en;q=0.9",
         ]
 
-        # Tambahkan cookies jika tersedia
         if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
             cmd.extend(["--cookies", COOKIES_FILE])
+            logger.info("🍪 Menggunakan cookies")
 
         cmd.extend(["-o", raw_path, youtube_url])
 
+        logger.info(f"⬇️ Menjalankan yt-dlp...")
         result = subprocess.run(cmd, capture_output=True, text=True)
+        logger.info(f"yt-dlp stdout: {result.stdout[-500:] if result.stdout else 'kosong'}")
+        logger.info(f"yt-dlp stderr: {result.stderr[-500:] if result.stderr else 'kosong'}")
+        logger.info(f"yt-dlp return code: {result.returncode}")
 
         if result.returncode != 0:
-            raise Exception(f"yt-dlp error: {result.stderr}")
+            raise Exception(f"yt-dlp error: {result.stderr[-300:]}")
 
+        logger.info("✅ Download selesai, mulai clipping...")
         JOBS[job_id]["status"] = "clipping"
         result_clips = []
 
         for i, clip in enumerate(clips):
             out_path = f"{OUTPUT_DIR}/{job_id}_clip{i}.mp4"
+            logger.info(f"✂️ Memotong clip {i+1}: {clip['start']} - {clip['end']}")
+
             ffmpeg_result = subprocess.run([
                 "ffmpeg", "-y",
                 "-i", raw_path,
@@ -56,8 +78,9 @@ def process_video(job_id, youtube_url, clips):
             ], capture_output=True, text=True)
 
             if ffmpeg_result.returncode != 0:
-                raise Exception(f"FFmpeg error pada clip {i}: {ffmpeg_result.stderr}")
+                raise Exception(f"FFmpeg error pada clip {i}: {ffmpeg_result.stderr[-300:]}")
 
+            logger.info(f"✅ Clip {i+1} selesai")
             result_clips.append({
                 "index": i,
                 "title": clip.get("title", f"Clip {i+1}"),
@@ -68,11 +91,14 @@ def process_video(job_id, youtube_url, clips):
 
         if os.path.exists(raw_path):
             os.remove(raw_path)
+            logger.info("🗑️ File raw dihapus")
 
         JOBS[job_id]["status"] = "ready"
         JOBS[job_id]["clips"] = result_clips
+        logger.info(f"🎉 Job {job_id} selesai!")
 
     except Exception as e:
+        logger.error(f"❌ Error pada job {job_id}: {str(e)}")
         JOBS[job_id]["status"] = "error"
         JOBS[job_id]["error"] = str(e)
 
@@ -88,10 +114,12 @@ def start_process():
 
     job_id = str(uuid.uuid4())
     JOBS[job_id] = {"status": "queued", "clips": [], "error": None}
+    logger.info(f"📥 Job baru diterima: {job_id}")
 
     thread = threading.Thread(target=process_video, args=(job_id, youtube_url, clips))
     thread.daemon = True
     thread.start()
+    logger.info(f"🧵 Thread dimulai untuk job {job_id}")
 
     return jsonify({"job_id": job_id, "status": "queued"})
 
@@ -148,10 +176,12 @@ def index():
     cookies_status = "✅ Cookies tersedia" if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0 else "❌ Cookies tidak ditemukan"
     return jsonify({
         "status": "Clipper API berjalan normal",
-        "cookies": cookies_status
+        "cookies": cookies_status,
+        "active_jobs": len(JOBS)
     })
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    logger.info(f"🚀 Server dimulai di port {port}")
     app.run(host="0.0.0.0", port=port)
