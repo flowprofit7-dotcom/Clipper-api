@@ -4,26 +4,37 @@ import subprocess, os, uuid, threading
 app = Flask(__name__)
 JOBS = {}
 OUTPUT_DIR = "/tmp/clips"
+COOKIES_FILE = "/tmp/cookies.txt"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Tulis cookies dari environment variable ke file sementara
+cookies_content = os.environ.get("YOUTUBE_COOKIES", "")
+if cookies_content:
+    with open(COOKIES_FILE, "w") as f:
+        f.write(cookies_content)
 
 def process_video(job_id, youtube_url, clips):
     try:
         JOBS[job_id]["status"] = "downloading"
         raw_path = f"{OUTPUT_DIR}/{job_id}_raw.mp4"
 
-        result = subprocess.run([
+        cmd = [
             "yt-dlp",
             "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "--merge-output-format", "mp4",
             "--geo-bypass",
             "--no-check-certificates",
-            "--extractor-args", "youtube:player_client=web,default",
-            "--js-interpreter", "nodejs",
             "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "--add-header", "Accept-Language:en-US,en;q=0.9",
-            "-o", raw_path,
-            youtube_url
-        ], capture_output=True, text=True)
+        ]
+
+        # Tambahkan cookies jika tersedia
+        if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
+            cmd.extend(["--cookies", COOKIES_FILE])
+
+        cmd.extend(["-o", raw_path, youtube_url])
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode != 0:
             raise Exception(f"yt-dlp error: {result.stderr}")
@@ -134,7 +145,11 @@ def get_file(job_id, clip_index):
 
 @app.route("/", methods=["GET"])
 def index():
-    return jsonify({"status": "Clipper API berjalan normal"})
+    cookies_status = "✅ Cookies tersedia" if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0 else "❌ Cookies tidak ditemukan"
+    return jsonify({
+        "status": "Clipper API berjalan normal",
+        "cookies": cookies_status
+    })
 
 
 if __name__ == "__main__":
