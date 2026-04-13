@@ -15,6 +15,11 @@ def process_video(job_id, youtube_url, clips):
             "yt-dlp",
             "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "--merge-output-format", "mp4",
+            "--geo-bypass",
+            "--no-check-certificates",
+            "--extractor-args", "youtube:player_client=web",
+            "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "--add-header", "Accept-Language:en-US,en;q=0.9",
             "-o", raw_path,
             youtube_url
         ], capture_output=True, text=True)
