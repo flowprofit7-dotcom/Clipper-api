@@ -41,6 +41,8 @@ def process_video(job_id, youtube_url, clips):
             "--no-check-certificates",
             "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "--add-header", "Accept-Language:en-US,en;q=0.9",
+            "--extractor-args", "youtube:player_client=web,default",
+            "--js-runtimes", "deno",
         ]
 
         if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
