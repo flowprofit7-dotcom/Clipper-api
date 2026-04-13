@@ -1,8 +1,11 @@
 [phases.setup]
-nixPkgs = ["ffmpeg", "python311", "nodejs_20"]
+nixPkgs = ["ffmpeg", "python311", "deno"]
 
 [phases.install]
-cmds = ["pip install flask yt-dlp", "npm install -g @distube/ytdl-core"]
+cmds = [
+  "pip install flask yt-dlp",
+  "yt-dlp -U"
+]
 
 [start]
 cmd = "python app.py"
